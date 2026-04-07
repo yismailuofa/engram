@@ -17,10 +17,21 @@
         Videos and playback position are stored offline in your browser.
         Clearing site data removes them.
       </p>
-      <label class="upload">
-        <span class="upload__label">Add videos</span>
-        <input type="file" id="file-input" accept="video/*" multiple />
-      </label>
+      <div class="header__row">
+        <label class="upload">
+          <span class="upload__label">Add videos</span>
+          <input type="file" id="file-input" accept="video/*" multiple />
+        </label>
+        <p
+          id="save-status"
+          class="save-status"
+          data-state="ready"
+          role="status"
+          aria-live="polite"
+        >
+          Ready
+        </p>
+      </div>
     </header>
 
     <main>

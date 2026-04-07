@@ -21,6 +21,87 @@ const objectUrls = new Map();
 /** id -> last throttled save timestamp */
 const throttleMarks = new Map();
 
+/** Nested IndexedDB writes: show one “Saving…” until all finish */
+let saveDepth = 0;
+/** @type {ReturnType<typeof setTimeout> | null} */
+let saveStatusIdleTimer = null;
+
+function beginSave() {
+  saveDepth += 1;
+  if (saveDepth === 1) setSaveStatus("saving", "Saving…");
+}
+
+function endSave() {
+  saveDepth = Math.max(0, saveDepth - 1);
+  if (saveDepth === 0) setSaveStatus("saved", "Saved");
+}
+
+/**
+ * @param {"ready" | "saving" | "saved"} state
+ * @param {string} text
+ */
+function setSaveStatus(state, text) {
+  const el = document.getElementById("save-status");
+  if (el) {
+    el.dataset.state = state;
+    el.textContent = text;
+  }
+  if (saveStatusIdleTimer !== null) {
+    clearTimeout(saveStatusIdleTimer);
+    saveStatusIdleTimer = null;
+  }
+  if (state === "saved") {
+    saveStatusIdleTimer = setTimeout(() => {
+      saveStatusIdleTimer = null;
+      if (saveDepth === 0) setSaveStatus("ready", "Ready");
+    }, 1400);
+  }
+}
+
+/**
+ * @param {VideoRecord} record
+ * @param {{ track?: boolean }} [options]
+ */
+function putVideo(record, options = {}) {
+  const track = options.track !== false;
+  if (track) beginSave();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, "readwrite");
+    const store = tx.objectStore(STORE);
+    const req = store.put(record);
+    req.onerror = () => {
+      if (track) endSave();
+      reject(req.error);
+    };
+    tx.oncomplete = () => {
+      if (track) endSave();
+      resolve();
+    };
+  });
+}
+
+/**
+ * @param {string} id
+ * @param {{ track?: boolean }} [options]
+ */
+function deleteVideo(id, options = {}) {
+  const track = options.track !== false;
+  if (track) beginSave();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, "readwrite");
+    const store = tx.objectStore(STORE);
+    const req = store.delete(id);
+    req.onerror = () => {
+      if (track) endSave();
+      reject(req.error);
+    };
+    tx.oncomplete = () => {
+      if (track) endSave();
+      resolve();
+    };
+  });
+}
+
 function openDatabase() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
@@ -59,32 +140,6 @@ function getAllVideos() {
     const req = store.getAll();
     req.onerror = () => reject(req.error);
     req.onsuccess = () => resolve(req.result || []);
-  });
-}
-
-/**
- * @param {VideoRecord} record
- */
-function putVideo(record) {
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE, "readwrite");
-    const store = tx.objectStore(STORE);
-    const req = store.put(record);
-    req.onerror = () => reject(req.error);
-    tx.oncomplete = () => resolve();
-  });
-}
-
-/**
- * @param {string} id
- */
-function deleteVideo(id) {
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE, "readwrite");
-    const store = tx.objectStore(STORE);
-    const req = store.delete(id);
-    req.onerror = () => reject(req.error);
-    tx.oncomplete = () => resolve();
   });
 }
 
@@ -246,23 +301,30 @@ function isVideoFile(f) {
 
 async function handleFiles(fileList) {
   const files = Array.from(fileList).filter(isVideoFile);
+  if (files.length === 0) return;
+
   const priorCount = document.querySelectorAll(".video-card").length;
-  for (let i = 0; i < files.length; i++) {
-    const file = files[i];
-    const id = crypto.randomUUID();
-    /** @type {VideoRecord} */
-    const record = {
-      id,
-      name: file.name,
-      type: file.type || "video/mp4",
-      blob: file,
-      positionSec: 0,
-    };
-    await putVideo(record);
-    const collapsed = priorCount + i > 0;
-    renderCard(record, { collapsed });
+  beginSave();
+  try {
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const id = crypto.randomUUID();
+      /** @type {VideoRecord} */
+      const record = {
+        id,
+        name: file.name,
+        type: file.type || "video/mp4",
+        blob: file,
+        positionSec: 0,
+      };
+      await putVideo(record, { track: false });
+      const collapsed = priorCount + i > 0;
+      renderCard(record, { collapsed });
+    }
+  } finally {
+    endSave();
   }
-  if (files.length) setEmptyVisible(false);
+  setEmptyVisible(false);
 }
 
 function flushAllVideoPositions() {
