@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>engram</title>
+    <meta
+      name="description"
+      content="engram is an offline video viewer for your browser."
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="header">
+      <h1>engram</h1>
+      <p class="note">
+        Videos and playback position are stored offline in your browser.
+        Clearing site data removes them.
+      </p>
+      <label class="upload">
+        <span class="upload__label">Add videos</span>
+        <input type="file" id="file-input" accept="video/*" multiple />
+      </label>
+    </header>
+
+    <main>
+      <p id="empty-state" class="empty-state" hidden>
+        No videos yet. Add files above.
+      </p>
+      <ul id="video-list" class="video-list"></ul>
+    </main>
+
+    <script src="app.js" defer></script>
+  </body>
+</html>
