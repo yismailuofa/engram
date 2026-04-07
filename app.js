@@ -1,5 +1,5 @@
 const DB_NAME = "offline-videos";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE = "videos";
 const TIMEUPDATE_INTERVAL_MS = 1500;
 
@@ -8,7 +8,7 @@ const TIMEUPDATE_INTERVAL_MS = 1500;
  * @property {string} id
  * @property {string} name
  * @property {string} type
- * @property {Blob} blob
+ * @property {ArrayBuffer} bytes
  * @property {number} positionSec
  */
 
@@ -109,6 +109,9 @@ function openDatabase() {
     req.onsuccess = () => resolve(req.result);
     req.onupgradeneeded = (e) => {
       const idb = e.target.result;
+      if (e.oldVersion < DB_VERSION && idb.objectStoreNames.contains(STORE)) {
+        idb.deleteObjectStore(STORE);
+      }
       if (!idb.objectStoreNames.contains(STORE)) {
         idb.createObjectStore(STORE, { keyPath: "id" });
       }
@@ -200,6 +203,61 @@ function revokeAllObjectUrls() {
 }
 
 /**
+ * Fresh Blob from stored bytes — WebKit breaks createObjectURL for Blobs deserialized
+ * straight from IndexedDB; rebuilding from ArrayBuffer avoids WebKitBlobResource error 1.
+ * Copy the buffer so the Blob does not reference IDB-internal storage.
+ * @param {VideoRecord} record
+ * @returns {Blob}
+ */
+/**
+ * @param {unknown} r
+ * @returns {r is VideoRecord}
+ */
+function recordHasPlayableBytes(r) {
+  if (!r || typeof r !== "object" || !("bytes" in r)) return false;
+  const b = /** @type {{ bytes: unknown }} */ (r).bytes;
+  if (!b) return false;
+  const len =
+    b instanceof ArrayBuffer
+      ? b.byteLength
+      : ArrayBuffer.isView(b)
+        ? b.byteLength
+        : 0;
+  return len > 0;
+}
+
+function playbackBlob(record) {
+  const raw = record.bytes;
+  if (!raw) {
+    throw new Error("missing video bytes");
+  }
+  const part =
+    raw instanceof ArrayBuffer
+      ? raw.slice(0)
+      : ArrayBuffer.isView(raw)
+        ? new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength).slice()
+        : raw;
+  return new Blob([part], {
+    type: record.type || "video/mp4",
+  });
+}
+
+/**
+ * @param {HTMLVideoElement} video
+ * @param {Blob} blob
+ * @param {string} id
+ */
+function attachBlobToVideo(video, blob, id) {
+  if ("srcObject" in video) {
+    video.srcObject = null;
+  }
+  video.removeAttribute("src");
+  const url = URL.createObjectURL(blob);
+  objectUrls.set(id, url);
+  video.src = url;
+}
+
+/**
  * @param {VideoRecord} record
  * @param {{ collapsed?: boolean }} [options]
  */
@@ -213,11 +271,8 @@ function renderCard(record, options = {}) {
   if (collapsed) li.classList.add("video-card--collapsed");
   li.dataset.videoId = record.id;
 
-  const url = URL.createObjectURL(record.blob);
-  objectUrls.set(record.id, url);
-
   const video = document.createElement("video");
-  video.src = url;
+  attachBlobToVideo(video, playbackBlob(record), record.id);
   video.controls = true;
   video.preload = "metadata";
 
@@ -284,7 +339,7 @@ async function refreshList() {
   list.replaceChildren();
   revokeAllObjectUrls();
 
-  const records = await getAllVideos();
+  const records = (await getAllVideos()).filter(recordHasPlayableBytes);
   setEmptyVisible(records.length === 0);
   records.forEach((rec, index) => {
     renderCard(rec, { collapsed: index > 0 });
@@ -309,12 +364,13 @@ async function handleFiles(fileList) {
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       const id = crypto.randomUUID();
+      const bytes = await file.arrayBuffer();
       /** @type {VideoRecord} */
       const record = {
         id,
         name: file.name,
         type: file.type || "video/mp4",
-        blob: file,
+        bytes,
         positionSec: 0,
       };
       await putVideo(record, { track: false });
