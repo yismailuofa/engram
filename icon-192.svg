@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" role="img" aria-label="engram app icon">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#5f9ee0" />
+      <stop offset="100%" stop-color="#2d6eb0" />
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="176" height="176" rx="36" fill="url(#bg)" />
+  <rect x="38" y="48" width="116" height="96" rx="12" fill="#e9f2ff" opacity="0.95" />
+  <polygon points="83,76 83,116 119,96" fill="#2d6eb0" />
+  <rect x="50" y="132" width="92" height="8" rx="4" fill="#2d6eb0" opacity="0.45" />
+</svg>
